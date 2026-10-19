@@ -1,0 +1,47 @@
+name: diag
+on:
+  push:
+    branches: [diag]
+permissions:
+  contents: write
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe ALPR data sources
+        shell: bash
+        run: |
+          mkdir out; cd out
+          UA='SignalRadar/1.0 (Android; +https://github.com/insanityatitsfinest/signal-radar)'
+          Q='[out:json][timeout:25];nwr["surveillance:type"="ALPR"](around:3000,40.7608,-111.8910);out center;'
+          for ep in https://overpass.deflock.org/api/interpreter https://overpass-api.de/api/interpreter https://overpass.kumi.systems/api/interpreter https://overpass.private.coffee/api/interpreter https://maps.mail.ru/osm/tools/overpass/api/interpreter; do
+            n=$(echo "$ep" | cut -d/ -f3)
+            for ua in "$UA" "SignalRadar/1.0 (Android; personal ALPR awareness)" ""; do
+              s=$(date +%s.%N)
+              code=$(curl -s -m 60 -o "op-$n.json" -w '%{http_code} %{size_download}' -A "$ua" -H 'Accept: application/json' --data-urlencode "data=$Q" "$ep")
+              e=$(date +%s.%N)
+              cnt=$(python3 -c "import json;print(len(json.load(open('op-$n.json'))['elements']))" 2>/dev/null || head -c 200 "op-$n.json" | tr '\n' ' ')
+              echo "$n | UA='${ua:0:25}' | $code | $(echo "$e - $s" | bc)s | elements=$cnt" >> report.txt
+            done
+          done
+          curl -s -m 30 -o index.json -w 'cdn index: %{http_code} %{size_download}\n' https://cdn.deflock.me/regions/index.json >> report.txt
+          head -c 600 index.json >> report.txt; echo >> report.txt
+          url=$(python3 -c "import json;print(json.load(open('index.json'))['tile_url'].replace('{lat}/{lon}','40/-120'))" 2>/dev/null)
+          echo "tile url: $url" >> report.txt
+          curl -s -m 60 -o tile.json -w 'tile: %{http_code} %{size_download} bytes\n' "$url" >> report.txt
+          curl -s -m 60 --compressed -o /dev/null -w 'tile gz transfer: %{size_download} bytes\n' -H 'Accept-Encoding: gzip' "$url" >> report.txt
+          python3 - >> report.txt <<'PY'
+          import json, math
+          t = json.load(open('tile.json'))
+          print('tile nodes:', len(t))
+          print('sample:', json.dumps(t[:2])[:600])
+          def d(a, b, c, e):
+              R = 6371000; p1, p2 = math.radians(a), math.radians(c)
+              x = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(e - b) / 2) ** 2
+              return 2 * R * math.asin(math.sqrt(x))
+          near = [n for n in t if d(40.7608, -111.8910, n['lat'], n['lon']) < 3000]
+          print('within 3 km of SLC:', len(near), ' within 10 km:', sum(1 for n in t if d(40.7608, -111.8910, n['lat'], n['lon']) < 10000))
+          PY
+          cat report.txt
+          git init -q -b diag-out && git add report.txt index.json && git -c user.name=gha -c user.email=gha@x commit -qm report
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" diag-out
