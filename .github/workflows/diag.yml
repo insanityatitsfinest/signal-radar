@@ -11,14 +11,15 @@ jobs:
       - name: Probe ALPR data sources
         shell: bash
         run: |
+          set +e +o pipefail
           mkdir out; cd out
           UA='SignalRadar/1.0 (Android; +https://github.com/insanityatitsfinest/signal-radar)'
           Q='[out:json][timeout:25];nwr["surveillance:type"="ALPR"](around:3000,40.7608,-111.8910);out center;'
           for ep in https://overpass.deflock.org/api/interpreter https://overpass-api.de/api/interpreter https://overpass.kumi.systems/api/interpreter https://overpass.private.coffee/api/interpreter https://maps.mail.ru/osm/tools/overpass/api/interpreter; do
             n=$(echo "$ep" | cut -d/ -f3)
-            for ua in "$UA" "SignalRadar/1.0 (Android; personal ALPR awareness)" ""; do
+            for ua in "$UA" "SignalRadar/1.0 (Android; personal ALPR awareness)"; do
               s=$(date +%s.%N)
-              code=$(curl -s -m 60 -o "op-$n.json" -w '%{http_code} %{size_download}' -A "$ua" -H 'Accept: application/json' --data-urlencode "data=$Q" "$ep")
+              code=$(curl -s -m 40 -o "op-$n.json" -w '%{http_code} %{size_download}' -A "$ua" -H 'Accept: application/json' --data-urlencode "data=$Q" "$ep")
               e=$(date +%s.%N)
               cnt=$(python3 -c "import json;print(len(json.load(open('op-$n.json'))['elements']))" 2>/dev/null || head -c 200 "op-$n.json" | tr '\n' ' ')
               echo "$n | UA='${ua:0:25}' | $code | $(echo "$e - $s" | bc)s | elements=$cnt" >> report.txt
@@ -42,6 +43,6 @@ jobs:
           near = [n for n in t if d(40.7608, -111.8910, n['lat'], n['lon']) < 3000]
           print('within 3 km of SLC:', len(near), ' within 10 km:', sum(1 for n in t if d(40.7608, -111.8910, n['lat'], n['lon']) < 10000))
           PY
-          cat report.txt
-          git init -q -b diag-out && git add report.txt index.json && git -c user.name=gha -c user.email=gha@x commit -qm report
+          cat report.txt; ls -la
+          git init -q -b diag-out; cp ../out/report.txt . 2>/dev/null; true && git add report.txt index.json && git -c user.name=gha -c user.email=gha@x commit -qm report
           git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" diag-out
