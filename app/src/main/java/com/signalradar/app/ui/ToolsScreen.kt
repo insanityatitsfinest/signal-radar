@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import com.signalradar.app.net.AlprTracker
 import com.signalradar.app.net.LanScanner
 import com.signalradar.app.scan.Device
+import com.signalradar.app.scan.Rssi
 import com.signalradar.app.scan.ScanEngine
 import com.signalradar.app.scan.Source
 import com.signalradar.app.scan.Vendors
@@ -102,15 +103,19 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(enabled = !alprLoading, onClick = {
-                        scope.launch {
-                            AlprTracker.load(ctx, radii[radiusIdx])
-                            AlprTracker.startTracking(ctx)
-                        }
-                    }) { Text(if (alprLoading) "Loading…" else "Load ALPR map") }
-                    if (alprDevices.isNotEmpty()) OutlinedButton(onClick = { AlprTracker.stopTracking(ctx); AlprTracker.clear() }) { Text("Clear") }
+                    Button(enabled = !alprLoading, onClick = { AlprTracker.load(ctx, radii[radiusIdx]) }) {
+                        Text(if (alprLoading) "Loading…" else "Load ALPR map")
+                    }
+                    if (alprDevices.isNotEmpty() || alprStatus.isNotEmpty()) OutlinedButton(onClick = { AlprTracker.clear(ctx) }) { Text("Clear") }
                 }
                 if (alprStatus.isNotEmpty()) Text(alprStatus, fontSize = 12.sp, color = Palette.muted, modifier = Modifier.padding(top = 6.dp))
+                alprDevices.firstOrNull()?.let { n ->
+                    Text(
+                        "Nearest: ${Rssi.formatDistance(n.geoDistanceM)} to the ${compassName(n.geoBearingDeg ?: 0.0)}. " +
+                            "On the Radar tab pick the 500 m or 2 km range to see them.",
+                        fontSize = 13.sp, color = Palette.alpr, modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
                 if (alprTracking) Text("Live: distances update as you move.", fontSize = 12.sp, color = Palette.green)
                 Text("Map data © OpenStreetMap contributors (ODbL) · deflock.me", fontSize = 11.sp, color = Palette.muted, modifier = Modifier.padding(top = 6.dp))
             }
@@ -179,4 +184,9 @@ private fun ToolCard(content: @Composable () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = Palette.surface), modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
         Column(Modifier.padding(14.dp)) { content() }
     }
+}
+
+private fun compassName(deg: Double): String {
+    val names = listOf("north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest")
+    return names[(((deg % 360 + 360) % 360 + 22.5) / 45).toInt() % 8]
 }
