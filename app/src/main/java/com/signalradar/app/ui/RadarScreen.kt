@@ -101,7 +101,7 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
     val now = System.currentTimeMillis()
 
     val shown = devices.filter { d ->
-        val isCruiser = d.flags.any { it.text.startsWith("CRUISER:") }
+        val isCruiser = d.category == "Law Enforcement Cruiser"
         val srcOk = when (d.source) {
             Source.BLE -> showBle
             Source.CLASSIC -> showBt
@@ -112,7 +112,7 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
         val fresh = d.source == Source.ALPR || isCruiser || now - d.lastSeen < 90_000
         val cruiserOk = !isCruiser || showCruisers
         srcOk && fresh && cruiserOk && (!threatsOnly || d.hasThreat(Confidence.MEDIUM) || isCruiser)
-    }.sortedByDescending { if (it.flags.any { f -> f.text.startsWith("CRUISER:") }) 1000f else (it.smoothRssi ?: -50f) }.take(120)
+    }.sortedByDescending { if (it.category == "Law Enforcement Cruiser") 1000f else (it.smoothRssi ?: -50f) }.take(120)
 
     val sweepT = rememberInfiniteTransition(label = "sweep")
     val sweep by sweepT.animateFloat(0f, 360f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "sweepAngle")
@@ -210,7 +210,7 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
             var labels = 0
             for (b in blips.sortedBy { it.d.hasThreat(Confidence.MEDIUM) }) {
                 val d = b.d
-                val isCruiser = d.flags.any { it.text.startsWith("CRUISER:") }
+                val isCruiser = d.category == "Law Enforcement Cruiser"
                 val threat = d.topFlag?.takeIf { it.confidence != Confidence.LOW }
                 val base = when {
                     isCruiser -> Color(0xFFFF3333) // High-visibility red for cruisers
