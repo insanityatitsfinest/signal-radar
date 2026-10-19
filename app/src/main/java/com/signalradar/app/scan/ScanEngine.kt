@@ -611,11 +611,15 @@ object ScanEngine {
         val ssid = r.SSID?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
         val local = Vendors.isLocallyAdministered(bssid)
         val vendor = if (!local) Vendors.ouiVendor(bssid) else null
+        val cruiserMatch = CruiserDetector.analyze(r)
         val details = ArrayList<Pair<String, String>>()
         val flagLists = ArrayList<List<Flag>>()
         details += "BSSID" to bssid + if (local) "  (locally administered / virtual)" else ""
         vendor?.let { details += "MAC vendor" to it }
         details += "SSID" to (ssid ?: "(hidden)")
+        if (cruiserMatch != null) {
+            details += "Public Safety / Fleet" to "${cruiserMatch.hardwareVendor} (${cruiserMatch.confidence.label})"
+        }
         val f = r.frequency
         val band = when {
             f < 2500 -> "2.4 GHz"
@@ -678,7 +682,9 @@ object ScanEngine {
         flagLists += Classifier.textFlags(ssid)
         flagLists += Classifier.vendorFlags(vendor)
         if (!local) flagLists += Classifier.macFlags(bssid)
-
+        if (cruiserMatch != null) {
+            flagLists += listOf(Flag(text = "CRUISER: ${cruiserMatch.hardwareVendor}", level = FlagLevel.ALERT))
+        }
         val key = "W:$bssid"
         synchronized(lock) {
             val old = devices[key]
