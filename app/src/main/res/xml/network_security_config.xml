@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- The WiFi Pineapple Mark VII web API is plain HTTP on its USB-C link. Everything else stays HTTPS-only. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">172.16.42.1</domain>
+    </domain-config>
+</network-security-config>

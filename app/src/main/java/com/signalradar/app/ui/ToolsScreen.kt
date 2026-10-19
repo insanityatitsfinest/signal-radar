@@ -18,6 +18,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,10 +34,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.signalradar.app.net.AlprTracker
 import com.signalradar.app.net.LanScanner
+import com.signalradar.app.net.Pineapple
 import com.signalradar.app.net.Prefs
 import com.signalradar.app.scan.Device
 import com.signalradar.app.scan.Rssi
@@ -62,10 +67,18 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
     var autoLoad by rememberSaveable { mutableStateOf(Prefs.autoLoadAlpr(ctx)) }
     val radii = Prefs.RADII
 
+    val pineRunning by Pineapple.running.collectAsState()
+    val pineStatus by Pineapple.status.collectAsState()
+    val pineConnected by Pineapple.connected.collectAsState()
+    var pineToken by rememberSaveable { mutableStateOf(Prefs.pineToken(ctx)) }
+    var showToken by rememberSaveable { mutableStateOf(false) }
+    var pineBand by rememberSaveable { mutableIntStateOf(Prefs.pineBand(ctx)) }
+
     val classic by ScanEngine.classicEnabled.collectAsState()
     val status by ScanEngine.status.collectAsState()
 
     val alprDevices = devices.filter { it.source == Source.ALPR }.sortedBy { it.geoDistanceM ?: 1e9 }
+    val pineDevices = devices.filter { it.source == Source.PINEAPPLE }
 
     LazyColumn(Modifier.fillMaxSize()) {
         item {
@@ -133,6 +146,58 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
                 }
                 if (alprTracking) Text("Live: distances update as you move.", fontSize = 12.sp, color = Palette.green)
                 Text("Map data © OpenStreetMap contributors (ODbL) · deflock.me", fontSize = 11.sp, color = Palette.muted, modifier = Modifier.padding(top = 6.dp))
+            }
+        }
+
+        // ---------- WiFi Pineapple (USB-C)
+        item {
+            SectionTitle("WiFi Pineapple (USB-C)")
+            ToolCard {
+                Text(
+                    "Plug the Mark VII into the phone with USB-C. It scans in monitor mode and streams back the " +
+                        "access points AND the client/recorder radios around you — which the phone alone can't see — onto the radar.",
+                    fontSize = 13.sp,
+                )
+                OutlinedTextField(
+                    value = pineToken,
+                    onValueChange = { pineToken = it; Prefs.setPineToken(ctx, it) },
+                    label = { Text("API token") },
+                    placeholder = { Text("from Settings → API Tokens on the Pineapple") },
+                    singleLine = true,
+                    visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        TextButton(onClick = { showToken = !showToken }) { Text(if (showToken) "Hide" else "Show") }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                Text("Band", fontSize = 12.sp, color = Palette.muted, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("2.4 GHz" to 0, "5 GHz" to 1, "Both" to 2).forEach { (label, v) ->
+                        FilterChip(
+                            selected = pineBand == v,
+                            onClick = { pineBand = v; Prefs.setPineBand(ctx, v) },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    if (!pineRunning) {
+                        Button(enabled = pineToken.isNotBlank(), onClick = { Pineapple.start(pineToken, pineBand) }) { Text("Connect") }
+                    } else {
+                        Button(onClick = { Pineapple.stop() }) { Text("Stop") }
+                    }
+                    if (pineDevices.isNotEmpty() || pineStatus.isNotEmpty()) OutlinedButton(onClick = { Pineapple.clear() }) { Text("Clear") }
+                }
+                if (pineStatus.isNotEmpty()) Text(pineStatus, fontSize = 12.sp, color = if (pineConnected) Palette.pineapple else Palette.muted, modifier = Modifier.padding(top = 6.dp))
+                if (pineConnected) Text(
+                    "On the radar as teal blips, and in the Devices tab. Client radios appear as their own entries.",
+                    fontSize = 12.sp, color = Palette.pineapple, modifier = Modifier.padding(top = 4.dp),
+                )
+                Text(
+                    "Read-only — it reads the Recon scan and nothing else. Keep to passive scanning; the Pineapple's " +
+                        "other features are a different matter. Many client MACs are randomized, so some devices show as random.",
+                    fontSize = 11.sp, color = Palette.muted, modifier = Modifier.padding(top = 6.dp),
+                )
             }
         }
 
