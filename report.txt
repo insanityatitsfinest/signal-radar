@@ -1,0 +1,15 @@
+overpass.deflock.org | UA='SignalRadar/1.0 (Android;' | 200 15470 | .794835671s | elements=41
+overpass.deflock.org | UA='SignalRadar/1.0 (Android;' | 200 15470 | .535620836s | elements=41
+overpass-api.de | UA='SignalRadar/1.0 (Android;' | 200 15470 | 37.659058147s | elements=41
+overpass-api.de | UA='SignalRadar/1.0 (Android;' | 502 534 | .525641863s | elements=# 502 Gateway Timeout  This Overpass API server is currently at capacity. All query workers are busy and the request queue is full.  ## What to do  Retry your request using exponential backoff: wait a
+overpass.kumi.systems | UA='SignalRadar/1.0 (Android;' | 500 646 | 1.848078064s | elements=<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd"> <html><head> <title>500 Internal Server Error</title> </head><body> <h1>Internal Server Error</h1> <p>The ser
+overpass.kumi.systems | UA='SignalRadar/1.0 (Android;' | 500 646 | .535780055s | elements=<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd"> <html><head> <title>500 Internal Server Error</title> </head><body> <h1>Internal Server Error</h1> <p>The ser
+overpass.private.coffee | UA='SignalRadar/1.0 (Android;' | 500 646 | .524169363s | elements=<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd"> <html><head> <title>500 Internal Server Error</title> </head><body> <h1>Internal Server Error</h1> <p>The ser
+overpass.private.coffee | UA='SignalRadar/1.0 (Android;' | 500 646 | .528422016s | elements=<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd"> <html><head> <title>500 Internal Server Error</title> </head><body> <h1>Internal Server Error</h1> <p>The ser
+maps.mail.ru | UA='SignalRadar/1.0 (Android;' | 504 160 | 1.316024534s | elements=<html> <head><title>504 Gateway Time-out</title></head> <body> <center><h1>504 Gateway Time-out</h1></center> <hr><center>nginx</center> </body> </html> 
+maps.mail.ru | UA='SignalRadar/1.0 (Android;' | 200 15469 | 27.404039874s | elements=41
+cdn index: 403 5299
+<!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=Edge"><meta name="robots" content="noindex,nofollow"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="content-security-policy" content="default-src &#39;none&#39;; script-src &#39;nonce-mlrgFTXmFfVLpq85obvnRx&#39; &#39;unsafe-eval&#39; https://challenges.cloudflare.com; script-src-attr &#39;none&#39;; style-src &#39;unsafe-inline&#39;; img-src &#39;self&#39; https://challenges
+tile url: 
+tile: 000 0 bytes
+tile gz transfer: 0 bytes
