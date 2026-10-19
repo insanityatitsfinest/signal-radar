@@ -60,6 +60,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.signalradar.app.scan.Confidence
 import com.signalradar.app.scan.Heading
+import com.signalradar.app.net.AlprTracker
+import com.signalradar.app.net.Prefs
 import com.signalradar.app.scan.ScanEngine
 import kotlinx.coroutines.delay
 
@@ -88,6 +90,14 @@ class MainActivity : ComponentActivity() {
     private fun startScanning() {
         started = true
         ScanEngine.start()
+        // Pull the ALPR camera map on open (fine-location granted) unless the user turned it off.
+        // Only when we don't already have it, so returning from another app keeps the loaded list.
+        if (Prefs.autoLoadAlpr(this) &&
+            AlprTracker.cams.value.isEmpty() && !AlprTracker.loading.value &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        ) {
+            AlprTracker.load(this, Prefs.radius(this))
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

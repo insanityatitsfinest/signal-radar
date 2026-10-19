@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.signalradar.app.net.AlprTracker
 import com.signalradar.app.net.LanScanner
+import com.signalradar.app.net.Prefs
 import com.signalradar.app.scan.Device
 import com.signalradar.app.scan.Rssi
 import com.signalradar.app.scan.ScanEngine
@@ -56,8 +58,9 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
     val alprLoading by AlprTracker.loading.collectAsState()
     val alprStatus by AlprTracker.status.collectAsState()
     val alprTracking by AlprTracker.tracking.collectAsState()
-    var radiusIdx by rememberSaveable { mutableIntStateOf(1) }
-    val radii = listOf(1000, 3000, 10000, 25000)
+    var radiusIdx by rememberSaveable { mutableIntStateOf(Prefs.radiusIdx(ctx)) }
+    var autoLoad by rememberSaveable { mutableStateOf(Prefs.autoLoadAlpr(ctx)) }
+    val radii = Prefs.RADII
 
     val classic by ScanEngine.classicEnabled.collectAsState()
     val status by ScanEngine.status.collectAsState()
@@ -93,18 +96,30 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
             SectionTitle("Flock / ALPR cameras near me")
             ToolCard {
                 Text(
-                    "Downloads license-plate cameras mapped by the DeFlock community (OpenStreetMap) around your " +
-                        "location and puts them on the radar with real distance and direction.",
+                    "License-plate cameras mapped by the DeFlock community (OpenStreetMap), shown on the radar with " +
+                        "real distance and direction. Loads on its own when you open the app.",
                     fontSize = 13.sp,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Load automatically on open", fontWeight = FontWeight.SemiBold)
+                        Text("Off: tap Refresh below to load it yourself.", fontSize = 12.sp, color = Palette.muted)
+                    }
+                    Switch(checked = autoLoad, onCheckedChange = { autoLoad = it; Prefs.setAutoLoadAlpr(ctx, it) })
+                }
+                Text("How far to look", fontSize = 12.sp, color = Palette.muted, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     radii.forEachIndexed { i, r ->
-                        FilterChip(selected = radiusIdx == i, onClick = { radiusIdx = i }, label = { Text("${r / 1000} km") })
+                        FilterChip(
+                            selected = radiusIdx == i,
+                            onClick = { radiusIdx = i; Prefs.setRadiusIdx(ctx, i); AlprTracker.load(ctx, radii[i]) },
+                            label = { Text("${r / 1000} km") },
+                        )
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                     Button(enabled = !alprLoading, onClick = { AlprTracker.load(ctx, radii[radiusIdx]) }) {
-                        Text(if (alprLoading) "Loading…" else "Load ALPR map")
+                        Text(if (alprLoading) "Loading…" else "Refresh")
                     }
                     if (alprDevices.isNotEmpty() || alprStatus.isNotEmpty()) OutlinedButton(onClick = { AlprTracker.clear(ctx) }) { Text("Clear") }
                 }
@@ -112,7 +127,7 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
                 alprDevices.firstOrNull()?.let { n ->
                     Text(
                         "Nearest: ${Rssi.formatDistance(n.geoDistanceM)} to the ${compassName(n.geoBearingDeg ?: 0.0)}. " +
-                            "On the Radar tab pick the 500 m or 2 km range to see them.",
+                            "Open the Radar tab and pick the 500 m or 2 km range to see them all.",
                         fontSize = 13.sp, color = Palette.alpr, modifier = Modifier.padding(top = 6.dp),
                     )
                 }
@@ -120,7 +135,6 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
                 Text("Map data © OpenStreetMap contributors (ODbL) · deflock.me", fontSize = 11.sp, color = Palette.muted, modifier = Modifier.padding(top = 6.dp))
             }
         }
-        items(alprDevices.take(15), key = { "alpr-" + it.key }) { d -> DeviceRow(d, now) { onOpen(d.key) } }
 
         // ---------- Lens finder
         item {
