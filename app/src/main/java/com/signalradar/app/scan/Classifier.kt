@@ -134,4 +134,11 @@ object Classifier {
             if (f.confidence == LOW && (counts[f.kind] ?: 0) >= 2) f.copy(confidence = MEDIUM, reason = f.reason + " (+ other hints)") else f
         }.sortedByDescending { it.confidence.ordinal }
     }
+
+    /** Keeps flags learned from earlier packets (e.g. an occasional Apple Find My frame) without re-counting them. */
+    fun carryOver(fresh: List<Flag>, old: List<Flag>?): List<Flag> {
+        if (old.isNullOrEmpty()) return fresh
+        val kinds = fresh.map { it.kind }.toSet()
+        return (fresh + old.filter { it.kind !in kinds }).sortedByDescending { it.confidence.ordinal }
+    }
 }

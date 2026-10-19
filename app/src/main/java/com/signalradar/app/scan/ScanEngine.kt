@@ -348,7 +348,7 @@ object ScanEngine {
                 rssi = null, smoothRssi = null,
                 measuredPower = tx?.let { (it - 41).coerceIn(-90, -35) } ?: -59,
                 firstSeen = now, lastSeen = now, seenCount = 1, randomizedAddress = randomized,
-                details = details, flags = Classifier.merge(*flagLists.toTypedArray(), old?.flags ?: emptyList()),
+                details = details, flags = Classifier.carryOver(Classifier.merge(*flagLists.toTypedArray()), old?.flags),
             )
             store(old, d, result.rssi)
         }
