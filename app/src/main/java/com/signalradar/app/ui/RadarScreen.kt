@@ -94,12 +94,14 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
     var showBt by rememberSaveable { mutableStateOf(true) }
     var showWifi by rememberSaveable { mutableStateOf(true) }
     var showAlpr by rememberSaveable { mutableStateOf(true) }
+    var showCruisers by rememberSaveable { mutableStateOf(true) }
     var threatsOnly by rememberSaveable { mutableStateOf(false) }
     var selected by remember { mutableStateOf<String?>(null) }
     val range = RANGES[rangeIdx]
     val now = System.currentTimeMillis()
 
     val shown = devices.filter { d ->
+        val isCruiser = d.flags.any { it.text.startsWith("CRUISER:") }
         val srcOk = when (d.source) {
             Source.BLE -> showBle
             Source.CLASSIC -> showBt
@@ -107,9 +109,10 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
             Source.ALPR -> showAlpr
             Source.LAN -> false
         }
-        val fresh = d.source == Source.ALPR || now - d.lastSeen < 90_000
-        srcOk && fresh && (!threatsOnly || d.hasThreat(Confidence.MEDIUM))
-    }.sortedByDescending { it.smoothRssi ?: -50f }.take(120)
+        val fresh = d.source == Source.ALPR || isCruiser || now - d.lastSeen < 90_000
+        val cruiserOk = !isCruiser || showCruisers
+        srcOk && fresh && cruiserOk && (!threatsOnly || d.hasThreat(Confidence.MEDIUM) || isCruiser)
+    }.sortedByDescending { if (it.flags.any { f -> f.text.startsWith("CRUISER:") }) 1000f else (it.smoothRssi ?: -50f) }.take(120)
 
     val sweepT = rememberInfiniteTransition(label = "sweep")
     val sweep by sweepT.animateFloat(0f, 360f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "sweepAngle")
@@ -207,16 +210,21 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
             var labels = 0
             for (b in blips.sortedBy { it.d.hasThreat(Confidence.MEDIUM) }) {
                 val d = b.d
+                val isCruiser = d.flags.any { it.text.startsWith("CRUISER:") }
                 val threat = d.topFlag?.takeIf { it.confidence != Confidence.LOW }
-                val base = if (threat != null) confColor(threat.confidence) else sourceColor(d.source)
+                val base = when {
+                    isCruiser -> Color(0xFFFF3333) // High-visibility red for cruisers
+                    threat != null -> confColor(threat.confidence)
+                    else -> sourceColor(d.source)
+                }
                 val bAngle = Math.toDegrees(kotlin.math.atan2((b.pos.x - cx).toDouble(), (cy - b.pos.y).toDouble())).toFloat()
                 val lag = Heading.norm(sweep - Heading.norm(bAngle))
                 val glow = if (lag < 60f) 1f - lag / 60f else 0f
                 val age = (now - d.lastSeen) / 1000f
-                val alpha = if (d.source == Source.ALPR) 1f else (1f - age / 90f).coerceIn(0.25f, 1f)
+                val alpha = if (d.source == Source.ALPR || isCruiser) 1f else (1f - age / 90f).coerceIn(0.25f, 1f)
                 val r = 7f + 9f * (d.smoothRssi?.let { Rssi.strength(it) } ?: 0.5f)
-                drawBlip(b, base, r, alpha, glow, threat != null, pulse, selected == d.key)
-                if (labels < 10 && (threat != null || selected == d.key || (d.smoothRssi ?: -100f) > -70f)) {
+                drawBlip(b, base, r, alpha, glow, threat != null || isCruiser, pulse, selected == d.key)
+                if (labels < 10 && (threat != null || isCruiser || selected == d.key || (d.smoothRssi ?: -100f) > -70f)) {
                     labels++
                     labelPaint.color = base.copy(alpha = alpha).toArgb()
                     val name = d.name ?: d.vendor?.let { shortVendor(it) } ?: continue
@@ -265,6 +273,7 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
             LegendChip("Bluetooth", Palette.classic, showBt) { showBt = !showBt }
             LegendChip("Wi-Fi", Palette.wifi, showWifi) { showWifi = !showWifi }
             LegendChip("ALPR map", Palette.alpr, showAlpr) { showAlpr = !showAlpr }
+            LegendChip("Cruisers", Color(0xFFFF3333), showCruisers) { showCruisers = !showCruisers }
             LegendChip("Threats only", Palette.red, threatsOnly) { threatsOnly = !threatsOnly }
         }
         Text(
