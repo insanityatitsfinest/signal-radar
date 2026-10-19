@@ -1,0 +1,74 @@
+name: Build APK
+
+on:
+  push:
+    branches-ignore: [apk]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
+
+      # Puts the APK (or the build log if it failed) on the "apk" branch.
+      - name: Publish result to the apk branch
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p out
+          cp build.log out/ 2>/dev/null || true
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk out/SignalRadar.apk
+            echo success > out/STATUS
+          else
+            echo failed > out/STATUS
+          fi
+          echo "${GITHUB_SHA}" > out/COMMIT
+          cd out
+          git init -q -b apk
+          git add -A
+          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" \
+            commit -qm "Build ${GITHUB_SHA::7}: $(cat STATUS)"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" apk
+
+      # Downloadable from the repo's Releases page on your phone.
+      # Every build becomes its own numbered release (v1.N), newest marked Latest.
+      # Older versions stay on the Releases page so you can go back to one.
+      - name: Publish release
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="1.${GITHUB_RUN_NUMBER}"
+          APK="SignalRadar-${VERSION}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          {
+            echo "## What's new"
+            git log -1 --pretty=%B "${GITHUB_SHA}" | grep -v -E '^(Co-Authored-By|Claude-Session):'
+            echo
+            echo "Download **${APK}** below and open it on your phone. It installs over the previous version."
+          } > notes.md
+          gh release create "v${VERSION}" "$APK" \
+            --title "Signal Radar ${VERSION}" \
+            --notes-file notes.md \
+            --target "${GITHUB_SHA}" \
+            --latest
