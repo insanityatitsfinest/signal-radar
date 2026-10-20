@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- The WiFi Pineapple Mark VII web API is plain HTTP on its USB-C link. Everything else stays HTTPS-only. -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">172.16.42.1</domain>
-    </domain-config>
+    <!--
+      The WiFi Pineapple's web API is plain HTTP, reached over USB-C, its management Wi-Fi, or a LAN IP
+      the user enters, so cleartext has to be allowed for an arbitrary private address. The app only ever
+      makes HTTP requests to the Pineapple the user points it at; the ALPR map and all other traffic is HTTPS.
+    -->
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

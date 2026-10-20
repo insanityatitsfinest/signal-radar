@@ -37,9 +37,8 @@ import java.net.URL
  * READ-ONLY: it logs in, runs a Recon scan, and reads the AP/client list. Nothing else.
  */
 object Pineapple {
-    const val HOST = "172.16.42.1"
+    const val DEFAULT_HOST = "172.16.42.1"
     const val PORT = 1471
-    private val BASE = "http://$HOST:$PORT"
 
     val running = MutableStateFlow(false)
     val status = MutableStateFlow("")
@@ -48,13 +47,19 @@ object Pineapple {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var job: Job? = null
     @Volatile private var token: String? = null
+    @Volatile private var host: String = DEFAULT_HOST
+    private val base: String get() = "http://$host:$PORT"
 
-    /** band: 0 = 2.4 GHz, 1 = 5 GHz, 2 = both. */
-    fun start(username: String, password: String, band: Int) {
+    /**
+     * host: 172.16.42.1 for both USB-C and the Pineapple's management Wi-Fi; a LAN IP if it's on your network.
+     * band: 0 = 2.4 GHz, 1 = 5 GHz, 2 = both.
+     */
+    fun start(hostIn: String, username: String, password: String, band: Int) {
         if (password.isBlank()) {
             status.value = "Enter the Pineapple's password (the one you set in its web UI) first."
             return
         }
+        host = hostIn.ifBlank { DEFAULT_HOST }.trim().removePrefix("http://").removePrefix("https://").substringBefore(':').substringBefore('/')
         job?.cancel()
         running.value = true
         job = scope.launch {
@@ -88,7 +93,7 @@ object Pineapple {
         try {
             login(username, password)
         } catch (e: IOException) {
-            status.value = "Couldn't reach the Pineapple at $HOST ($BASE). Open $BASE:$PORT in a browser to confirm the USB link, then retry.\n${e.message}"
+            status.value = "Couldn't reach the Pineapple at $base. Open that address in a browser to confirm the link (USB-C or Wi-Fi), then retry.\n${e.message}"
             return@withContext
         }
         if (token == null) {
@@ -235,7 +240,7 @@ object Pineapple {
     private fun postNoAuth(path: String, body: JSONObject): JSONObject? = request("POST", path, body, auth = false)
 
     private fun request(method: String, path: String, body: JSONObject?, auth: Boolean): JSONObject? {
-        val c = (URL(BASE + path).openConnection() as HttpURLConnection).apply {
+        val c = (URL(base + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 8000
             readTimeout = 30000

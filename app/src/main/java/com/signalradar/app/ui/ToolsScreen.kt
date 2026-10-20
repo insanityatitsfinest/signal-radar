@@ -70,6 +70,7 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
     val pineRunning by Pineapple.running.collectAsState()
     val pineStatus by Pineapple.status.collectAsState()
     val pineConnected by Pineapple.connected.collectAsState()
+    var pineHost by rememberSaveable { mutableStateOf(Prefs.pineHost(ctx)) }
     var pineUser by rememberSaveable { mutableStateOf(Prefs.pineUser(ctx)) }
     var pinePass by rememberSaveable { mutableStateOf(Prefs.pinePass(ctx)) }
     var showPass by rememberSaveable { mutableStateOf(false) }
@@ -155,10 +156,20 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
             SectionTitle("WiFi Pineapple (USB-C)")
             ToolCard {
                 Text(
-                    "Plug the Mark VII into the phone with USB-C. It scans in monitor mode and streams back the " +
-                        "access points AND the client/recorder radios around you — which the phone alone can't see — onto the radar. " +
-                        "Sign in with the same username and password you use for the Pineapple's web UI (no API token needed).",
+                    "Connect the Mark VII by USB-C, or join its management Wi-Fi from the phone. It scans in monitor " +
+                        "mode and streams back the access points AND the client/recorder radios around you — which the " +
+                        "phone alone can't see — onto the radar. Sign in with the same username and password you use for " +
+                        "the Pineapple's web UI (no API token needed).",
                     fontSize = 13.sp,
+                )
+                OutlinedTextField(
+                    value = pineHost,
+                    onValueChange = { pineHost = it; Prefs.setPineHost(ctx, it) },
+                    label = { Text("Address") },
+                    placeholder = { Text("172.16.42.1") },
+                    singleLine = true,
+                    supportingText = { Text("172.16.42.1 for USB-C and management Wi-Fi. Change only if it's on your LAN at another IP.", fontSize = 11.sp) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
                 OutlinedTextField(
                     value = pineUser,
@@ -191,7 +202,7 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                     if (!pineRunning) {
-                        Button(enabled = pinePass.isNotBlank(), onClick = { Pineapple.start(pineUser, pinePass, pineBand) }) { Text("Connect") }
+                        Button(enabled = pinePass.isNotBlank(), onClick = { Pineapple.start(pineHost, pineUser, pinePass, pineBand) }) { Text("Connect") }
                     } else {
                         Button(onClick = { Pineapple.stop() }) { Text("Stop") }
                     }
