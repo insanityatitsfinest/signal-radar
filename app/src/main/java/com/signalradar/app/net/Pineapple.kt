@@ -37,9 +37,9 @@ import java.net.URL
  * READ-ONLY: it logs in, runs a Recon scan, and reads the AP/client list. Nothing else.
  */
 object Pineapple {
-    const val DEFAULT_HOST = "172.16.42.1"
+    var hostIp = "172.16.42.1"
     const val PORT = 1471
-
+    private val API_URL: String get() = "http://$hostIp:$PORT/api/"
     val running = MutableStateFlow(false)
     val status = MutableStateFlow("")
     val connected = MutableStateFlow(false)
