@@ -35,6 +35,8 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
     var pineappleToken by rememberSaveable { mutableStateOf("") }
     var pineappleSsid by rememberSaveable { mutableStateOf("Free_WiFi") }
     var pineapplePassword by rememberSaveable { mutableStateOf("") }
+    var pineappleIp by rememberSaveable { mutableStateOf("172.16.42.1") }
+    var pineappleToken by rememberSaveable { mutableStateOf("") }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
@@ -82,20 +84,26 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
             }
         }
 
-        // Wi-Fi Pineapple
+      // Wi-Fi Pineapple
         item {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 colors = CardDefaults.cardColors(containerColor = Palette.surface2)
             ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("Hak5 Wi-Fi Pineapple (USB-C)", fontWeight = FontWeight.SemiBold)
+                    Text("Hak5 Wi-Fi Pineapple", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Plug a Pineapple Mark VII into your phone via USB-C, enable USB Tethering, " +
+                        "Connect via USB-C or Wi-Fi Management, enter the IP address and API token, " +
                         "and configure the PineAP rogue access point.",
                         fontSize = 12.sp, color = Palette.muted
                     )
                     if (!pineappleConnected) {
+                        OutlinedTextField(
+                            value = pineappleIp, onValueChange = { pineappleIp = it },
+                            label = { Text("Pineapple IP Address") },
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            singleLine = true
+                        )
                         OutlinedTextField(
                             value = pineappleToken, onValueChange = { pineappleToken = it },
                             label = { Text("API Token") },
@@ -119,7 +127,10 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                         if (!pineappleRunning) {
-                            Button(onClick = { Pineapple.start(pineappleToken, pineappleSsid, pineapplePassword, 2) }) { Text("Start PineAP") }
+                            Button(onClick = { 
+                                Pineapple.hostIp = pineappleIp.trim()
+                                Pineapple.start(pineappleToken, pineappleSsid, pineapplePassword, 2) 
+                            }) { Text("Start PineAP") }
                         } else {
                             Button(onClick = { Pineapple.stop() }, colors = ButtonDefaults.buttonColors(containerColor = Palette.red)) { Text("Stop") }
                         }
@@ -133,7 +144,6 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
                 }
             }
         }
-
         // Hidden Lens Finder
         item {
             Card(
