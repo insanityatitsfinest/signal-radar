@@ -53,6 +53,7 @@ object Palette {
     val alpr = Color(0xFFFF8A3D)
     val red = Color(0xFFFF4D4D)
     val amber = Color(0xFFFFB020)
+    val PINEAPPLE = Color(0xFFE040FB)
 }
 
 val AppColors = darkColorScheme(
@@ -78,6 +79,7 @@ fun sourceColor(s: Source) = when (s) {
     Source.WIFI -> Palette.wifi
     Source.LAN -> Palette.lan
     Source.ALPR -> Palette.alpr
+    Source.PINEAPPLE -> Palette.PINEAPPLE
 }
 
 fun confColor(c: Confidence) = when (c) {
