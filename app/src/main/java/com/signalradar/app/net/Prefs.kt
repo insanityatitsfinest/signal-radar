@@ -2,11 +2,16 @@ package com.signalradar.app.net
 
 import android.content.Context
 
-/** Small persisted settings for the ALPR map. */
+/** Small persisted settings for the ALPR map and Pineapple tool. */
 object Prefs {
     private const val FILE = "signalradar"
     private const val KEY_AUTO = "alpr_auto"
     private const val KEY_RADIUS_IDX = "alpr_radius_idx"
+    
+    private const val KEY_PINE_HOST = "pine_host"
+    private const val KEY_PINE_USER = "pine_user"
+    private const val KEY_PINE_PASS = "pine_pass"
+    private const val KEY_PINE_BAND = "pine_band"
 
     val RADII = listOf(1000, 3000, 10000, 25000)
 
@@ -20,4 +25,18 @@ object Prefs {
     fun setRadiusIdx(ctx: Context, v: Int) = p(ctx).edit().putInt(KEY_RADIUS_IDX, v).apply()
 
     fun radius(ctx: Context): Int = RADII[radiusIdx(ctx)]
+
+    // ---------- WiFi Pineapple Preferences ----------
+
+    fun pineHost(ctx: Context): String = p(ctx).getString(KEY_PINE_HOST, "") ?: ""
+    fun setPineHost(ctx: Context, host: String) = p(ctx).edit().putString(KEY_PINE_HOST, host).apply()
+
+    fun pineUser(ctx: Context): String = p(ctx).getString(KEY_PINE_USER, "") ?: ""
+    fun setPineUser(ctx: Context, user: String) = p(ctx).edit().putString(KEY_PINE_USER, user).apply()
+
+    fun pinePass(ctx: Context): String = p(ctx).getString(KEY_PINE_PASS, "") ?: ""
+    fun setPinePass(ctx: Context, pass: String) = p(ctx).edit().putString(KEY_PINE_PASS, pass).apply()
+
+    fun pineBand(ctx: Context): Int = p(ctx).getInt(KEY_PINE_BAND, 2)
+    fun setPineBand(ctx: Context, band: Int) = p(ctx).edit().putInt(KEY_PINE_BAND, band).apply()
 }
