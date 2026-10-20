@@ -20,6 +20,7 @@ enum class ThreatKind(val label: String) {
     SMART_GLASSES("Camera glasses"),
     BODY_CAM("Body cam / police gear"),
     TRACKER("Tracker"),
+    ROGUE_AP("Rogue Access Point"),
 }
 
 data class Flag(val kind: ThreatKind, val confidence: Confidence, val reason: String)
