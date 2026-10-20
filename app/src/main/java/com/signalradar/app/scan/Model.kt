@@ -8,7 +8,7 @@ enum class Source(val label: String) {
     WIFI("Wi-Fi"),
     LAN("Network"),
     ALPR("ALPR map"),
-    PINEAPPLE("PineApple"),
+    PINEAPPLE("Pineapple"),
 }
 
 enum class Confidence(val label: String) { LOW("Weak"), MEDIUM("Likely"), HIGH("Strong") }
@@ -20,7 +20,6 @@ enum class ThreatKind(val label: String) {
     SMART_GLASSES("Camera glasses"),
     BODY_CAM("Body cam / police gear"),
     TRACKER("Tracker"),
-    ROGUE_AP("Rogue Access Point"),
 }
 
 data class Flag(val kind: ThreatKind, val confidence: Confidence, val reason: String)
