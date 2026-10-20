@@ -94,9 +94,8 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
     var showBt by rememberSaveable { mutableStateOf(true) }
     var showWifi by rememberSaveable { mutableStateOf(true) }
     var showAlpr by rememberSaveable { mutableStateOf(true) }
-    var showPineappleSource by rememberSaveable { mutableStateOf(true) }
+    var showPineapple by rememberSaveable { mutableStateOf(true) }
     var showCruisers by rememberSaveable { mutableStateOf(true) }
-    var showPineapples by rememberSaveable { mutableStateOf(true) }
     var threatsOnly by rememberSaveable { mutableStateOf(false) }
     var selected by remember { mutableStateOf<String?>(null) }
     val range = RANGES[rangeIdx]
@@ -104,23 +103,18 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
 
     val shown = devices.filter { d ->
         val isCruiser = d.category == "Law Enforcement Cruiser"
-        val isPineappleThreat = d.category == "Rogue AP / Wi-Fi Pineapple"
         val srcOk = when (d.source) {
             Source.BLE -> showBle
             Source.CLASSIC -> showBt
             Source.WIFI -> showWifi
             Source.ALPR -> showAlpr
-            Source.PINEAPPLE -> showPineappleSource
+            Source.PINEAPPLE -> showPineapple
             Source.LAN -> false
         }
-        val fresh = d.source == Source.ALPR || d.source == Source.PINEAPPLE || isCruiser || isPineappleThreat || now - d.lastSeen < 90_000
+        val fresh = d.source == Source.ALPR || d.source == Source.PINEAPPLE || isCruiser || now - d.lastSeen < 90_000
         val cruiserOk = !isCruiser || showCruisers
-        val pineappleOk = !isPineappleThreat || showPineapples
-        srcOk && fresh && cruiserOk && pineappleOk && (!threatsOnly || d.hasThreat(Confidence.MEDIUM) || isCruiser || isPineappleThreat)
-    }.sortedByDescending { 
-        if (it.category == "Law Enforcement Cruiser" || it.category == "Rogue AP / Wi-Fi Pineapple") 1000f 
-        else (it.smoothRssi ?: -50f) 
-    }.take(120)
+        srcOk && fresh && cruiserOk && (!threatsOnly || d.hasThreat(Confidence.MEDIUM) || isCruiser)
+    }.sortedByDescending { if (it.category == "Law Enforcement Cruiser") 1000f else (it.smoothRssi ?: -50f) }.take(120)
 
     val sweepT = rememberInfiniteTransition(label = "sweep")
     val sweep by sweepT.animateFloat(0f, 360f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "sweepAngle")
@@ -214,16 +208,14 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
             )
 
             val blips = layout(shown, heading, range, cx, cy, radius)
+            // brightness boost when the sweep passes over a blip
             var labels = 0
             for (b in blips.sortedBy { it.d.hasThreat(Confidence.MEDIUM) }) {
                 val d = b.d
                 val isCruiser = d.category == "Law Enforcement Cruiser"
-                val isPineappleThreat = d.category == "Rogue AP / Wi-Fi Pineapple"
                 val threat = d.topFlag?.takeIf { it.confidence != Confidence.LOW }
                 val base = when {
                     isCruiser -> Color(0xFFFF3333) // High-visibility red for cruisers
-                    isPineappleThreat -> Color(0xFFD500F9) // High-visibility purple for Pineapple threats
-                    d.source == Source.PINEAPPLE -> Color(0xFFE040FB) // Light purple for Pineapple Recon targets
                     threat != null -> confColor(threat.confidence)
                     else -> sourceColor(d.source)
                 }
@@ -231,10 +223,10 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
                 val lag = Heading.norm(sweep - Heading.norm(bAngle))
                 val glow = if (lag < 60f) 1f - lag / 60f else 0f
                 val age = (now - d.lastSeen) / 1000f
-                val alpha = if (d.source == Source.ALPR || d.source == Source.PINEAPPLE || isCruiser || isPineappleThreat) 1f else (1f - age / 90f).coerceIn(0.25f, 1f)
+                val alpha = if (d.source == Source.ALPR || isCruiser) 1f else (1f - age / 90f).coerceIn(0.25f, 1f)
                 val r = 7f + 9f * (d.smoothRssi?.let { Rssi.strength(it) } ?: 0.5f)
-                drawBlip(b, base, r, alpha, glow, threat != null || isCruiser || isPineappleThreat, pulse, selected == d.key)
-                if (labels < 10 && (threat != null || isCruiser || isPineappleThreat || selected == d.key || (d.smoothRssi ?: -100f) > -70f)) {
+                drawBlip(b, base, r, alpha, glow, threat != null || isCruiser, pulse, selected == d.key)
+                if (labels < 10 && (threat != null || isCruiser || selected == d.key || (d.smoothRssi ?: -100f) > -70f)) {
                     labels++
                     labelPaint.color = base.copy(alpha = alpha).toArgb()
                     val name = d.name ?: d.vendor?.let { shortVendor(it) } ?: continue
@@ -259,7 +251,7 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
                         Text(listOfNotNull(sel.vendor?.let { shortVendor(it) }, sel.category).joinToString(" · "), fontSize = 12.sp, color = Palette.muted)
                         Text(
                             listOfNotNull(sel.rssi?.let { "$it dBm" }, "~" + Rssi.formatDistance(sel.estDistanceM)).joinToString(" · "),
-                            fontSize = 13.sp, color = if (sel.source == Source.PINEAPPLE) Color(0xFFE040FB) else sourceColor(sel.source),
+                            fontSize = 13.sp, color = sourceColor(sel.source),
                         )
                         sel.topFlag?.let { Text(it.kind.label + " — " + it.confidence.label, color = confColor(it.confidence), fontSize = 12.sp) }
                     }
@@ -283,9 +275,8 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
             LegendChip("Bluetooth", Palette.classic, showBt) { showBt = !showBt }
             LegendChip("Wi-Fi", Palette.wifi, showWifi) { showWifi = !showWifi }
             LegendChip("ALPR map", Palette.alpr, showAlpr) { showAlpr = !showAlpr }
-            LegendChip("Recon (USB)", Color(0xFFE040FB), showPineappleSource) { showPineappleSource = !showPineappleSource }
+            LegendChip("Pineapple", Palette.pineapple, showPineapple) { showPineapple = !showPineapple }
             LegendChip("Cruisers", Color(0xFFFF3333), showCruisers) { showCruisers = !showCruisers }
-            LegendChip("Pineapples", Color(0xFFD500F9), showPineapples) { showPineapples = !showPineapples }
             LegendChip("Threats only", Palette.red, threatsOnly) { threatsOnly = !threatsOnly }
         }
         Text(
