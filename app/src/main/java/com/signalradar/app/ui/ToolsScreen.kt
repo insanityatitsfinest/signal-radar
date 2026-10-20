@@ -70,8 +70,9 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
     val pineRunning by Pineapple.running.collectAsState()
     val pineStatus by Pineapple.status.collectAsState()
     val pineConnected by Pineapple.connected.collectAsState()
-    var pineToken by rememberSaveable { mutableStateOf(Prefs.pineToken(ctx)) }
-    var showToken by rememberSaveable { mutableStateOf(false) }
+    var pineUser by rememberSaveable { mutableStateOf(Prefs.pineUser(ctx)) }
+    var pinePass by rememberSaveable { mutableStateOf(Prefs.pinePass(ctx)) }
+    var showPass by rememberSaveable { mutableStateOf(false) }
     var pineBand by rememberSaveable { mutableIntStateOf(Prefs.pineBand(ctx)) }
 
     val classic by ScanEngine.classicEnabled.collectAsState()
@@ -155,20 +156,28 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
             ToolCard {
                 Text(
                     "Plug the Mark VII into the phone with USB-C. It scans in monitor mode and streams back the " +
-                        "access points AND the client/recorder radios around you — which the phone alone can't see — onto the radar.",
+                        "access points AND the client/recorder radios around you — which the phone alone can't see — onto the radar. " +
+                        "Sign in with the same username and password you use for the Pineapple's web UI (no API token needed).",
                     fontSize = 13.sp,
                 )
                 OutlinedTextField(
-                    value = pineToken,
-                    onValueChange = { pineToken = it; Prefs.setPineToken(ctx, it) },
-                    label = { Text("API token") },
-                    placeholder = { Text("from Settings → API Tokens on the Pineapple") },
+                    value = pineUser,
+                    onValueChange = { pineUser = it; Prefs.setPineUser(ctx, it) },
+                    label = { Text("Username") },
+                    placeholder = { Text("usually root") },
                     singleLine = true,
-                    visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        TextButton(onClick = { showToken = !showToken }) { Text(if (showToken) "Hide" else "Show") }
-                    },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                OutlinedTextField(
+                    value = pinePass,
+                    onValueChange = { pinePass = it; Prefs.setPinePass(ctx, it) },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        TextButton(onClick = { showPass = !showPass }) { Text(if (showPass) "Hide" else "Show") }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                 )
                 Text("Band", fontSize = 12.sp, color = Palette.muted, modifier = Modifier.padding(top = 8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -182,7 +191,7 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                     if (!pineRunning) {
-                        Button(enabled = pineToken.isNotBlank(), onClick = { Pineapple.start(pineToken, pineBand) }) { Text("Connect") }
+                        Button(enabled = pinePass.isNotBlank(), onClick = { Pineapple.start(pineUser, pinePass, pineBand) }) { Text("Connect") }
                     } else {
                         Button(onClick = { Pineapple.stop() }) { Text("Stop") }
                     }

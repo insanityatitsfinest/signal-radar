@@ -11,54 +11,55 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 
 /**
  * Reads a WiFi Pineapple Mark VII over USB-C and merges its monitor-mode Recon scan
  * (access points AND client/station radios, which the phone itself can't see) onto the radar.
  *
- * Over USB-C the Mark VII is always at http://172.16.42.1:1471/api/. Every call is a POST of
- * {"apiToken": <token>, "module"/"system": <name>, "action": <action>, ...args}; the newest
- * firmware prefixes the JSON reply with 6 junk chars which we strip. Files (recon scans) come
- * back via a download token: downloadResults -> {download: <tok>} -> GET ?download=<tok>.
+ * Current Mk7 REST API (firmware 2.x), over USB-C at http://172.16.42.1:1471:
+ *   POST /api/login                     {username,password} -> {token}
+ *   all other calls: header  Authorization: Bearer <token>
+ *   GET  /api/recon/status              -> {scanRunning, scanID, scanPercent, ...}
+ *   POST /api/recon/start               {live, scan_time, band} -> {scanRunning, scanID}
+ *   POST /api/recon/stop
+ *   POST /api/recon/scans/<id>/ap       {search,page,pageSize,sortCol,sortDir} -> {aps:[...]}
+ * Auth is the Pineapple's own web-UI username/password — no API-token module needed.
  *
- * This is READ-ONLY: it lists scans, optionally starts a Recon scan, and reads results. It does
- * not touch PineAP, associations, or any attack feature.
+ * READ-ONLY: it logs in, runs a Recon scan, and reads the AP/client list. Nothing else.
  */
 object Pineapple {
     const val HOST = "172.16.42.1"
     const val PORT = 1471
-    private val API_URL = "http://$HOST:$PORT/api/"
+    private val BASE = "http://$HOST:$PORT"
 
     val running = MutableStateFlow(false)
     val status = MutableStateFlow("")
     val connected = MutableStateFlow(false)
-    val apCount = MutableStateFlow(0)
-    val clientCount = MutableStateFlow(0)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var job: Job? = null
+    @Volatile private var token: String? = null
 
-    /** scanType for startNormalScan: 0 = 2.4 GHz, 1 = 5 GHz, 2 = both. */
-    fun start(token: String, scanType: Int) {
-        if (token.isBlank()) {
-            status.value = "Enter the API token from the Pineapple's Settings → API Tokens first."
+    /** band: 0 = 2.4 GHz, 1 = 5 GHz, 2 = both. */
+    fun start(username: String, password: String, band: Int) {
+        if (password.isBlank()) {
+            status.value = "Enter the Pineapple's password (the one you set in its web UI) first."
             return
         }
         job?.cancel()
         running.value = true
         job = scope.launch {
             try {
-                loop(token.trim(), scanType)
+                loop(username.ifBlank { "root" }.trim(), password, band)
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) status.value = "Stopped: ${e.message}"
             } finally {
@@ -70,182 +71,120 @@ object Pineapple {
     fun stop() {
         job?.cancel()
         running.value = false
+        scope.launch(Dispatchers.IO) { runCatching { token?.let { post("/api/recon/stop", null) } } }
         status.value = "Stopped."
     }
 
     fun clear() {
         stop()
         connected.value = false
-        apCount.value = 0
-        clientCount.value = 0
+        token = null
         status.value = ""
         ScanEngine.replaceSource(Source.PINEAPPLE, emptyList())
     }
 
-    private suspend fun loop(token: String, scanType: Int) = withContext(Dispatchers.IO) {
-        status.value = "Connecting to Pineapple over USB-C…"
-        // Verify the token / reachability by listing scans.
-        val probe = try {
-            post(token, "module", "Recon", "getScans")
+    private suspend fun loop(username: String, password: String, band: Int) = withContext(Dispatchers.IO) {
+        status.value = "Logging in to the Pineapple…"
+        try {
+            login(username, password)
         } catch (e: IOException) {
-            status.value = "Can't reach the Pineapple at $HOST. Check the USB-C cable and that the interface is up.\n${e.message}"
+            status.value = "Couldn't reach the Pineapple at $HOST ($BASE). Open $BASE:$PORT in a browser to confirm the USB link, then retry.\n${e.message}"
             return@withContext
         }
-        if (probe == null || probe.optBoolean("error", false) || probe.has("apiToken")) {
-            status.value = "The Pineapple rejected the token. Generate one under Settings → API Tokens and paste it in."
+        if (token == null) {
+            status.value = "Login failed — check the username (usually \"root\") and the password you set for the web UI."
             return@withContext
         }
         connected.value = true
 
-        val durationSec = 30
+        // Reuse a running scan if there is one, else start a continuous live scan.
+        var scanId = currentScanId()
+        if (scanId == null) {
+            status.value = "Starting a monitor-mode scan…"
+            scanId = startScan(band)
+        }
+        if (scanId == null) {
+            status.value = "Logged in, but the Pineapple didn't start a scan. Is a radio interface free for Recon?"
+            return@withContext
+        }
+
         while (isActive) {
             try {
-                status.value = "Scanning (monitor mode)…"
-                post(token, "module", "Recon", "startNormalScan", JSONObject().put("scanType", scanType).put("scanDuration", durationSec))
-                // Wait for the scan, polling the current scan id so we read the right one.
-                val scanId = waitForScan(token, durationSec)
-                val devices = readResults(token, scanId)
-                if (devices != null) {
-                    publish(devices)
-                    val aps = devices.count { it.category.startsWith("Wi-Fi AP") }
-                    apCount.value = aps
-                    clientCount.value = devices.size - aps
-                    status.value = "Pineapple: $aps access points, ${devices.size - aps} client radios. Rescanning…"
-                }
+                val devices = readAps(scanId)
+                publish(devices)
+                val aps = devices.count { it.category.startsWith("Wi-Fi AP") }
+                status.value = "Pineapple: $aps access points, ${devices.size - aps} client radios. Live."
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                status.value = "Scan hiccup: ${e.message}. Retrying…"
+                // token can expire; re-login once and keep going
+                if ((e.message ?: "").contains("401")) {
+                    runCatching { login(username, password) }
+                } else {
+                    status.value = "Scan read hiccup: ${e.message}. Retrying…"
+                }
             }
-            delay(2500)
+            delay(5000)
         }
     }
 
-    private suspend fun waitForScan(token: String, durationSec: Int): Int? {
-        var current: Int? = null
-        val deadline = System.currentTimeMillis() + (durationSec + 20) * 1000L
-        while (System.currentTimeMillis() < deadline) {
-            delay(3000)
-            val r = runCatching { post(token, "module", "Recon", "getCurrentScanID") }.getOrNull()
-            val id = r?.optInt("scanID", r.optInt("scanId", -1)) ?: -1
-            if (id >= 0) current = id
-            // 0 / negative current id means no scan is running any more → it finished
-            val runningId = r?.opt("scanID") ?: r?.opt("scanId")
-            if (runningId == null && current != null) break
-            if (r != null && r.optBoolean("finished", false)) break
-        }
-        if (current != null && current >= 0) return current
-        // Fall back to the newest scan in the list.
-        val scans = runCatching { post(token, "module", "Recon", "getScans") }.getOrNull()
-        return newestScanId(scans)
+    // ---------------------------------------------------------------- API calls
+
+    private fun login(username: String, password: String) {
+        val resp = postNoAuth("/api/login", JSONObject().put("username", username).put("password", password))
+        token = resp?.optString("token")?.takeIf { it.isNotBlank() }
     }
 
-    private fun newestScanId(resp: JSONObject?): Int? {
-        val arr = resp?.let { firstArray(it) } ?: return null
-        var best = -1
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            val id = o.optInt("scanID", o.optInt("scanId", o.optInt("id", -1)))
-            if (id > best) best = id
-        }
-        return if (best >= 0) best else null
+    private fun currentScanId(): Int? {
+        val s = runCatching { get("/api/recon/status") }.getOrNull() ?: return null
+        return if (s.optBoolean("scanRunning", false)) s.optInt("scanID", -1).takeIf { it >= 0 } else null
     }
 
-    private suspend fun readResults(token: String, scanId: Int?): List<Device>? {
-        if (scanId == null) return null
-        // Preferred: loadResults returns the parsed scan directly.
-        val loaded = runCatching { post(token, "module", "Recon", "loadResults", JSONObject().put("scanId", scanId)) }.getOrNull()
-        parseScan(loaded)?.takeIf { it.isNotEmpty() }?.let { return it }
-        // Fallback: downloadResults -> download token -> GET file.
-        val dl = runCatching { post(token, "module", "Recon", "downloadResults", JSONObject().put("scanId", scanId)) }.getOrNull()
-        val dTok = dl?.optString("download", "")?.takeIf { it.isNotBlank() } ?: dl?.optJSONObject("download")?.optString("token")
-        if (!dTok.isNullOrBlank()) {
-            val text = runCatching { download(token, dTok) }.getOrNull()
-            if (text != null) parseScan(parseLoose(text))?.let { return it }
-        }
-        return emptyList()
+    private fun startScan(band: Int): Int? {
+        val body = JSONObject()
+            .put("live", true)
+            .put("scan_time", 0) // 0 = continuous
+            .put("band", band.coerceIn(0, 2).toString())
+        val r = post("/api/recon/start", body) ?: return null
+        return r.optInt("scanID", -1).takeIf { it >= 0 }
     }
 
-    // ---------------------------------------------------------------- parsing (tolerant)
-
-    private val SSID_KEYS = listOf("ssid", "SSID", "essid")
-    private val MAC_KEYS = listOf("bssid", "BSSID", "mac", "MAC", "macAddress", "address")
-    private val RSSI_KEYS = listOf("rssi", "RSSI", "signal", "signalStrength", "power", "dbm")
-    private val CH_KEYS = listOf("channel", "ch", "chan")
-    private val CLIENT_KEYS = listOf("clients", "Clients", "stations", "devices")
-
-    private fun JSONObject.firstString(keys: List<String>): String? {
-        for (k in keys) if (has(k) && !isNull(k)) optString(k).takeIf { it.isNotBlank() }?.let { return it }
-        return null
-    }
-
-    private fun JSONObject.firstInt(keys: List<String>): Int? {
-        for (k in keys) if (has(k) && !isNull(k)) {
-            val v = opt(k)
-            when (v) {
-                is Int -> return v
-                is Number -> return v.toInt()
-                is String -> v.trim().toIntOrNull()?.let { return it }
-            }
-        }
-        return null
-    }
-
-    private fun JSONObject.clientsArray(): JSONArray? {
-        for (k in CLIENT_KEYS) optJSONArray(k)?.let { return it }
-        return null
-    }
-
-    /** Accepts either a parsed JSON object or array; returns the devices it can recognise. */
-    private fun parseScan(root: Any?): List<Device>? {
-        root ?: return null
-        val aps = ArrayList<JSONObject>()
-        collectApObjects(root, aps)
-        if (aps.isEmpty()) return null
+    private fun readAps(scanId: Int): List<Device> {
+        val body = JSONObject()
+            .put("search", "").put("page", 0).put("pageSize", 99999999)
+            .put("sortCol", "last_seen").put("sortDir", "asc")
+        val r = post("/api/recon/scans/$scanId/ap", body) ?: return emptyList()
+        val aps = r.optJSONArray("aps") ?: JSONArray()
         val now = System.currentTimeMillis()
         val out = ArrayList<Device>()
         val seen = HashSet<String>()
-        for (ap in aps) {
-            val bssid = ap.firstString(MAC_KEYS)?.uppercase() ?: continue
-            val ssid = ap.firstString(SSID_KEYS)
-            val rssi = ap.firstInt(RSSI_KEYS)
-            val ch = ap.firstInt(CH_KEYS)
-            if (seen.add("P:$bssid")) out += apDevice(bssid, ssid, rssi, ch, now)
-            ap.clientsArray()?.let { cl ->
-                for (i in 0 until cl.length()) {
-                    val c = cl.optJSONObject(i) ?: continue
-                    val cmac = c.firstString(MAC_KEYS)?.uppercase() ?: continue
-                    if (!seen.add("P:$cmac")) continue
-                    out += clientDevice(cmac, c.firstInt(RSSI_KEYS), ssid, bssid, c, now)
+        for (i in 0 until aps.length()) {
+            val ap = aps.optJSONObject(i) ?: continue
+            val bssid = ap.optString("bssid").uppercase().takeIf { it.isNotBlank() } ?: continue
+            val ssid = ap.optString("ssid").takeIf { it.isNotBlank() && it != "null" }
+            if (seen.add("P:$bssid")) out += apDevice(bssid, ssid, ap, now)
+            ap.optJSONArray("clients")?.let { cl ->
+                for (j in 0 until cl.length()) {
+                    val c = cl.optJSONObject(j) ?: continue
+                    val mac = c.optString("client_mac").uppercase().takeIf { it.isNotBlank() } ?: continue
+                    if (!seen.add("P:$mac")) continue
+                    out += clientDevice(mac, ssid, bssid, c, now)
                 }
             }
         }
         return out
     }
 
-    /** Recursively find objects that look like an AP (have an SSID or a clients array or a MAC). */
-    private fun collectApObjects(node: Any?, out: MutableList<JSONObject>) {
-        when (node) {
-            is JSONArray -> for (i in 0 until node.length()) collectApObjects(node.opt(i), out)
-            is JSONObject -> {
-                val looksAp = node.firstString(SSID_KEYS) != null || node.clientsArray() != null
-                val hasMac = node.firstString(MAC_KEYS) != null
-                if (looksAp && hasMac) {
-                    out += node
-                } else {
-                    // Descend into container objects (e.g. {"aps":[...]}, {"results":{...}}).
-                    val keys = node.keys()
-                    while (keys.hasNext()) collectApObjects(node.opt(keys.next()), out)
-                }
-            }
-        }
-    }
-
-    private fun apDevice(bssid: String, ssid: String?, rssi: Int?, ch: Int?, now: Long): Device {
+    private fun apDevice(bssid: String, ssid: String?, ap: JSONObject, now: Long): Device {
         val vendor = Vendors.ouiVendor(bssid)
+        val rssi = ap.optInt("signal", 0).takeIf { it != 0 }
+        val ch = ap.optInt("channel", 0).takeIf { it != 0 }
         val details = ArrayList<Pair<String, String>>()
         details += "BSSID" to bssid
         vendor?.let { details += "MAC vendor" to it }
-        ch?.let { details += "Channel" to it.toString() }
+        ch?.let { details += "Channel" to "$it (${if (it <= 14) "2.4" else "5"} GHz)" }
+        if (ap.optInt("hidden", 0) == 1) details += "SSID" to "(hidden)"
+        if (ap.optInt("wps", 0) == 1) details += "WPS" to "enabled"
+        ap.optInt("num_clients", 0).takeIf { it > 0 }?.let { details += "Clients" to it.toString() }
         details += "Seen by" to "WiFi Pineapple (monitor mode)"
         val flags = Classifier.merge(
             Classifier.textFlags(ssid),
@@ -261,98 +200,67 @@ object Pineapple {
         )
     }
 
-    private fun clientDevice(mac: String, rssi: Int?, apSsid: String?, apBssid: String, raw: JSONObject, now: Long): Device {
+    private fun clientDevice(mac: String, apSsid: String?, apBssid: String, c: JSONObject, now: Long): Device {
         val local = Vendors.isLocallyAdministered(mac)
         val vendor = if (!local) Vendors.ouiVendor(mac) else null
-        val probes = raw.optJSONArray("probes") ?: raw.optJSONArray("ssids")
-        val probeList = probes?.let { (0 until it.length()).mapNotNull { i -> it.optString(i).takeIf { s -> s.isNotBlank() } } } ?: emptyList()
+        val probed = c.optString("ssid").takeIf { it.isNotBlank() && it != "null" }
+        // The Recon API gives client presence but usually no per-client RSSI, so these aren't range-able.
+        val rssi = c.optInt("signal", 0).takeIf { it != 0 }
         val details = ArrayList<Pair<String, String>>()
         details += "MAC" to mac + if (local) "  (randomized)" else ""
         vendor?.let { details += "MAC vendor" to it }
         if (apSsid != null || apBssid.isNotBlank()) details += "Associated with" to (apSsid ?: apBssid)
-        if (probeList.isNotEmpty()) details += "Probing for" to probeList.joinToString(", ")
-        details += "Seen by" to "WiFi Pineapple (monitor mode — a device, not an AP)"
+        probed?.let { details += "Probing for" to it }
+        details += "Seen by" to "WiFi Pineapple (a client device, not an access point)"
         val flagLists = ArrayList<List<Flag>>()
         flagLists += Classifier.vendorFlags(vendor)
         if (!local) flagLists += Classifier.macFlags(mac)
-        probeList.forEach { flagLists += Classifier.textFlags(it, "Probes for") }
+        probed?.let { flagLists += Classifier.textFlags(it, "Probes for") }
         return Device(
             key = "P:$mac", source = Source.PINEAPPLE, address = mac,
-            name = probeList.firstOrNull()?.let { "client (probes \"$it\")" },
+            name = probed?.let { "client (probes \"$it\")" },
             vendor = vendor, category = "Wi-Fi client radio",
             rssi = rssi, smoothRssi = rssi?.toFloat(), measuredPower = -45,
             firstSeen = now, lastSeen = now, seenCount = 1, randomizedAddress = local,
-            details = details,
-            flags = Classifier.merge(*flagLists.toTypedArray()),
+            details = details, flags = Classifier.merge(*flagLists.toTypedArray()),
         )
     }
 
-    private fun publish(devices: List<Device>) {
-        ScanEngine.replaceSource(Source.PINEAPPLE, devices)
-    }
+    private fun publish(devices: List<Device>) = ScanEngine.replaceSource(Source.PINEAPPLE, devices)
 
     // ---------------------------------------------------------------- http
 
-    private fun post(token: String, type: String, module: String, action: String, args: JSONObject? = null): JSONObject? {
-        val body = JSONObject().put("apiToken", token).put(type, module).put("action", action)
-        args?.keys()?.forEach { body.put(it, args.get(it)) }
-        val c = (URL(API_URL).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
+    private fun get(path: String): JSONObject? = request("GET", path, null, auth = true)
+    private fun post(path: String, body: JSONObject?): JSONObject? = request("POST", path, body, auth = true)
+    private fun postNoAuth(path: String, body: JSONObject): JSONObject? = request("POST", path, body, auth = false)
+
+    private fun request(method: String, path: String, body: JSONObject?, auth: Boolean): JSONObject? {
+        val c = (URL(BASE + path).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
             connectTimeout = 8000
-            readTimeout = 60000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
+            readTimeout = 30000
             setRequestProperty("Accept", "application/json")
+            if (auth) token?.let { setRequestProperty("Authorization", "Bearer $it") }
+            if (body != null) {
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+            }
         }
         try {
-            c.outputStream.use { it.write(body.toString().toByteArray()) }
+            if (body != null) c.outputStream.use { it.write(body.toString().toByteArray()) }
             val code = c.responseCode
             val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
-            if (code !in 200..299) throw IOException("HTTP $code")
-            return parseLoose(text) as? JSONObject
-        } finally {
-            c.disconnect()
-        }
-    }
-
-    private fun download(token: String, dToken: String): String {
-        val url = API_URL + "?apiToken=" + URLEncoder.encode(token, "UTF-8") + "&download=" + URLEncoder.encode(dToken, "UTF-8")
-        val c = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 8000
-            readTimeout = 60000
-            setRequestProperty("Accept", "application/json")
-        }
-        try {
-            if (c.responseCode !in 200..299) throw IOException("HTTP ${c.responseCode}")
-            return c.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            c.disconnect()
-        }
-    }
-
-    /** Strips the firmware's 6-char ")]}'," prefix and parses to a JSONObject or JSONArray. */
-    private fun parseLoose(text: String): Any? {
-        var t = text.trim()
-        if (t.startsWith(")]}'")) t = t.substringAfter('\n', t.drop(6))
-        t = t.trim()
-        return try {
-            when {
-                t.startsWith("{") -> JSONObject(t)
-                t.startsWith("[") -> JSONArray(t)
-                else -> null
+            if (code == 401) throw IOException("HTTP 401 (auth)")
+            if (code !in 200..299) {
+                val msg = runCatching { JSONObject(text).optString("error") }.getOrNull()?.takeIf { it.isNotBlank() }
+                throw IOException("HTTP $code" + (msg?.let { " – $it" } ?: ""))
             }
-        } catch (_: Exception) {
-            null
+            val t = text.trim()
+            return if (t.startsWith("{")) JSONObject(t)
+            else if (t.startsWith("[")) JSONObject().put("aps", JSONArray(t)) // defensive: bare array
+            else null
+        } finally {
+            c.disconnect()
         }
-    }
-
-    private fun firstArray(o: JSONObject): JSONArray? {
-        val keys = o.keys()
-        while (keys.hasNext()) {
-            val v = o.opt(keys.next())
-            if (v is JSONArray) return v
-            if (v is JSONObject) firstArray(v)?.let { return it }
-        }
-        return null
     }
 }

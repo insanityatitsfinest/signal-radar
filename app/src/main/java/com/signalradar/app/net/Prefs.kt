@@ -7,7 +7,8 @@ object Prefs {
     private const val FILE = "signalradar"
     private const val KEY_AUTO = "alpr_auto"
     private const val KEY_RADIUS_IDX = "alpr_radius_idx"
-    private const val KEY_PINE_TOKEN = "pine_token"
+    private const val KEY_PINE_USER = "pine_user"
+    private const val KEY_PINE_PASS = "pine_pass"
     private const val KEY_PINE_BAND = "pine_band"
 
     val RADII = listOf(1000, 3000, 10000, 25000)
@@ -23,8 +24,11 @@ object Prefs {
 
     fun radius(ctx: Context): Int = RADII[radiusIdx(ctx)]
 
-    fun pineToken(ctx: Context): String = p(ctx).getString(KEY_PINE_TOKEN, "") ?: ""
-    fun setPineToken(ctx: Context, v: String) = p(ctx).edit().putString(KEY_PINE_TOKEN, v).apply()
+    fun pineUser(ctx: Context): String = p(ctx).getString(KEY_PINE_USER, "root") ?: "root"
+    fun setPineUser(ctx: Context, v: String) = p(ctx).edit().putString(KEY_PINE_USER, v).apply()
+
+    fun pinePass(ctx: Context): String = p(ctx).getString(KEY_PINE_PASS, "") ?: ""
+    fun setPinePass(ctx: Context, v: String) = p(ctx).edit().putString(KEY_PINE_PASS, v).apply()
 
     fun pineBand(ctx: Context): Int = p(ctx).getInt(KEY_PINE_BAND, 2).coerceIn(0, 2)
     fun setPineBand(ctx: Context, v: Int) = p(ctx).edit().putInt(KEY_PINE_BAND, v).apply()
