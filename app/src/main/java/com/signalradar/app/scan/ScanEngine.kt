@@ -77,8 +77,6 @@ object ScanEngine {
     private val wifi: WifiManager?
         get() = app.getSystemService(WifiManager::class.java)
 
-    // ---------------------------------------------------------------- lifecycle
-
     fun start() {
         if (running) return
         running = true
@@ -87,20 +85,20 @@ object ScanEngine {
         startBle()
         if (classicEnabled.value) startDiscovery()
 
-        jobs += scope.launch { // publish snapshots to the UI twice a second
+        jobs += scope.launch {
             while (isActive) {
                 publish()
                 delay(500)
             }
         }
-        jobs += scope.launch { // Android allows ~4 Wi-Fi scans / 2 min unless throttling is disabled in Developer options
+        jobs += scope.launch {
             readWifi()
             while (isActive) {
                 requestWifiScan()
                 delay(30_000)
             }
         }
-        jobs += scope.launch { // restart BLE now and then; Android quietly degrades scans that run for 30+ min
+        jobs += scope.launch {
             while (isActive) {
                 delay(10 * 60_000L)
                 stopBle(); delay(500); startBle()
@@ -156,8 +154,6 @@ object ScanEngine {
         receiversRegistered = true
     }
 
-    // ---------------------------------------------------------------- shared state
-
     fun history(key: String): List<Int> = synchronized(lock) { history[key]?.toList() ?: emptyList() }
 
     fun wifiScanResult(key: String): WifiScanResult? = synchronized(lock) { wifiResults[key] }
@@ -173,7 +169,6 @@ object ScanEngine {
     fun replaceSource(source: Source, list: List<Device>) {
         synchronized(lock) {
             devices.entries.removeAll { it.value.source == source }
-            // No pop-up alerts here: these lists come from tools the user just ran and shows directly.
             list.forEach { d -> devices[d.key] = d }
         }
         publish()
@@ -182,7 +177,12 @@ object ScanEngine {
     private fun publish() {
         val now = System.currentTimeMillis()
         val snap = synchronized(lock) {
-            devices.entries.removeAll { it.value.source != Source.ALPR && it.value.source != Source.LAN && now - it.value.lastSeen > 30 * 60_000L }
+            devices.entries.removeAll { 
+                it.value.source != Source.ALPR && 
+                it.value.source != Source.LAN && 
+                it.value.source != Source.PINEAPPLE && 
+                now - it.value.lastSeen > 30 * 60_000L 
+            }
             devices.values.toList()
         }
         _devices.value = snap.sortedWith(compareByDescending<Device> { it.smoothRssi ?: -999f }.thenBy { it.geoDistanceM ?: 1e9 })
@@ -192,7 +192,6 @@ object ScanEngine {
         if (d.hasThreat(Confidence.MEDIUM) && alerted.add(d.key)) _newThreat.tryEmit(d)
     }
 
-    /** Must be called with [lock] held. */
     private fun store(old: Device?, d0: Device, rssi: Int?) {
         var d = d0
         if (rssi != null) {
@@ -271,7 +270,6 @@ object ScanEngine {
         var vendor: String? = null
         var category: String? = null
 
-        // Manufacturer-specific data: company ID + payload
         val mfr = rec?.manufacturerSpecificData
         if (mfr != null) {
             for (i in 0 until mfr.size()) {
@@ -290,7 +288,6 @@ object ScanEngine {
             }
         }
 
-        // Service UUIDs + service data
         val uuids16 = LinkedHashSet<Int>()
         val serviceNames = ArrayList<String>()
         rec?.serviceUuids?.forEach { pu ->
@@ -314,7 +311,6 @@ object ScanEngine {
         }
         if (serviceNames.isNotEmpty()) details += "Services" to serviceNames.joinToString("\n")
 
-        // Appearance (what the device says it is)
         rec?.bytes?.let { appearance(it) }?.let { (raw, label) ->
             details += "Appearance" to String.format("%s (0x%04X)", label, raw)
             if (category == null) category = label
@@ -322,7 +318,6 @@ object ScanEngine {
         }
         if (category == null) category = categoryFromServices(uuids16, name)
 
-        // Vendor from the MAC when it's a public address
         val ouiVendor = if (!randomized) Vendors.ouiVendor(addr) else null
         if (ouiVendor != null) {
             details += "MAC vendor" to ouiVendor
@@ -613,8 +608,8 @@ object ScanEngine {
         val local = Vendors.isLocallyAdministered(bssid)
         val vendor = if (!local) Vendors.ouiVendor(bssid) else null
         
-        // Match against embedded cruiser detector
         val cruiserMatch = CruiserDetector.analyze(r)
+        val pineappleMatch = PineappleDetector.analyze(r)
         
         val details = ArrayList<Pair<String, String>>()
         val flagLists = ArrayList<List<Flag>>()
@@ -624,6 +619,9 @@ object ScanEngine {
         
         if (cruiserMatch != null) {
             details += "Public Safety / Fleet" to "${cruiserMatch.hardwareVendor} (${cruiserMatch.confidence})"
+        }
+        if (pineappleMatch != null) {
+            details += "Threat Detected" to "${pineappleMatch.hardwareVendor} (${pineappleMatch.confidence})"
         }
         
         val f = r.frequency
@@ -652,7 +650,6 @@ object ScanEngine {
         }
         if (r.is80211mcResponder) details += "Wi-Fi RTT" to "Supported — precise distance available in Find"
 
-        // Information elements: vendor tags and WPS device info (manufacturer / model often revealed here)
         var wpsVendor: String? = null
         if (Build.VERSION.SDK_INT >= 30) {
             val ieVendors = LinkedHashSet<String>()
@@ -679,6 +676,7 @@ object ScanEngine {
 
         val category = when {
             cruiserMatch != null -> "Law Enforcement Cruiser"
+            pineappleMatch != null -> "Rogue AP / Wi-Fi Pineapple"
             ssid == null -> "Hidden Wi-Fi network"
             ssid.startsWith("DIRECT-") -> "Wi-Fi Direct (printer / TV / camera)"
             Regex("(?i)iphone|galaxy|android|pixel|hotspot|moto|oneplus").containsMatchIn(ssid) -> "Phone hotspot"
@@ -690,14 +688,21 @@ object ScanEngine {
         flagLists += Classifier.vendorFlags(vendor)
         if (!local) flagLists += Classifier.macFlags(bssid)
         
+        if (cruiserMatch != null) {
+            flagLists += listOf(Flag(ThreatKind.TRACKER, Confidence.HIGH, "CRUISER: ${cruiserMatch.hardwareVendor}"))
+        }
+        if (pineappleMatch != null) {
+            flagLists += listOf(Flag(ThreatKind.ROGUE_AP, Confidence.HIGH, "PINEAPPLE: ${pineappleMatch.hardwareVendor}"))
+        }
+
         val key = "W:$bssid"
         synchronized(lock) {
             val old = devices[key]
-            if (old != null && old.lastSeen >= seenAt) return // already have this sample
+            if (old != null && old.lastSeen >= seenAt) return 
             wifiResults[key] = r
             val d = Device(
                 key = key, source = Source.WIFI, address = bssid, name = ssid,
-                vendor = cruiserMatch?.hardwareVendor ?: vendor ?: wpsVendor, category = category,
+                vendor = cruiserMatch?.hardwareVendor ?: pineappleMatch?.hardwareVendor ?: vendor ?: wpsVendor, category = category,
                 rssi = null, smoothRssi = null,
                 measuredPower = if (f < 2500) -38 else -45,
                 firstSeen = seenAt, lastSeen = seenAt, seenCount = 1, randomizedAddress = local,
@@ -781,6 +786,34 @@ object CruiserDetector {
             oui == "00:25:DF" || (vendor != null && matchesSsidPattern) -> CruiserHotspot(vendor ?: "Public Safety VAN", "HIGH")
             vendor != null -> CruiserHotspot(vendor, "MEDIUM")
             matchesSsidPattern -> CruiserHotspot("Matched Cruiser/MDT SSID", "MEDIUM")
+            else -> null
+        }
+    }
+}
+
+data class PineappleHotspot(
+    val hardwareVendor: String,
+    val confidence: String
+)
+
+object PineappleDetector {
+    private val HAK5_OUIS = mapOf(
+        "00:13:37" to "Hak5 Wi-Fi Pineapple"
+    )
+
+    private val PINEAPPLE_SSID_REGEX = Regex("(?i)^(Pineapple.*)")
+
+    fun analyze(scanResult: WifiScanResult): PineappleHotspot? {
+        val rawSsid = scanResult.SSID?.removeSurrounding("\"")?.trim().orEmpty()
+        val bssid = scanResult.BSSID?.uppercase(Locale.US) ?: return null
+
+        val oui = bssid.take(8)
+        val vendor = HAK5_OUIS[oui]
+        val matchesSsidPattern = rawSsid.isNotEmpty() && PINEAPPLE_SSID_REGEX.containsMatchIn(rawSsid)
+
+        return when {
+            oui == "00:13:37" -> PineappleHotspot("Hak5 Wi-Fi Pineapple", "HIGH")
+            matchesSsidPattern -> PineappleHotspot("Potential Wi-Fi Pineapple", "MEDIUM")
             else -> null
         }
     }
