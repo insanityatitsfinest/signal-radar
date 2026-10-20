@@ -43,6 +43,8 @@ import com.signalradar.app.scan.ScanEngine
 import com.signalradar.app.scan.Source
 import com.signalradar.app.scan.Vendors
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.signalradar.app.net.Pineapple
 
 @Composable
@@ -140,6 +142,7 @@ val pineappleRunning by Pineapple.running.collectAsState()
                 Text("Map data © OpenStreetMap contributors (ODbL) · deflock.me", fontSize = 11.sp, color = Palette.muted, modifier = Modifier.padding(top = 6.dp))
             }
         }
+        Item {
 SectionTitle("Hak5 Wi-Fi Pineapple (USB-C)")
             ToolCard {
                 Text(
@@ -170,6 +173,7 @@ SectionTitle("Hak5 Wi-Fi Pineapple (USB-C)")
                     Text(pineappleStatus, fontSize = 13.sp, color = Palette.green, modifier = Modifier.padding(top = 6.dp))
                 }
             }
+        }
         // ---------- Lens finder
         item {
             SectionTitle("Lens finder")
