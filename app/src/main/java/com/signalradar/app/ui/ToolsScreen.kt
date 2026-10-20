@@ -45,6 +45,8 @@ import com.signalradar.app.scan.Vendors
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ButtonDefaults
 import com.signalradar.app.net.Pineapple
 
 @Composable
@@ -79,7 +81,42 @@ val pineappleRunning by Pineapple.running.collectAsState()
         item {
             Text("Tools", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.green, modifier = Modifier.padding(16.dp, 8.dp))
         }
-
+item {
+            Text("Hak5 Wi-Fi Pineapple (USB-C)", fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = Palette.surface2)
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        "Plug a Wi-Fi Pineapple Mark VII into your phone via USB-C, enable Android USB Tethering, " +
+                        "and enter an API token to pull its monitor-mode Recon scans onto the radar.",
+                        fontSize = 13.sp,
+                    )
+                    if (!pineappleConnected) {
+                        OutlinedTextField(
+                            value = pineappleToken, onValueChange = { pineappleToken = it },
+                            label = { Text("API Token") },
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            singleLine = true,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                        if (!pineappleRunning) {
+                            Button(onClick = { Pineapple.start(pineappleToken, 2) }) { Text("Start Recon") }
+                        } else {
+                            Button(onClick = { Pineapple.stop() }, colors = ButtonDefaults.buttonColors(containerColor = Palette.red)) { Text("Stop") }
+                        }
+                        if (pineappleConnected) {
+                            OutlinedButton(onClick = { Pineapple.clear() }) { Text("Disconnect") }
+                        }
+                    }
+                    if (pineappleStatus.isNotEmpty()) {
+                        Text(pineappleStatus, fontSize = 13.sp, color = Palette.green, modifier = Modifier.padding(top = 6.dp))
+                    }
+                }
+            }
+        }
         // ---------- hidden cameras on this Wi-Fi
         item {
             SectionTitle("Hidden camera check — this Wi-Fi")
@@ -142,38 +179,7 @@ val pineappleRunning by Pineapple.running.collectAsState()
                 Text("Map data © OpenStreetMap contributors (ODbL) · deflock.me", fontSize = 11.sp, color = Palette.muted, modifier = Modifier.padding(top = 6.dp))
             }
         }
-        Item {
-SectionTitle("Hak5 Wi-Fi Pineapple (USB-C)")
-            ToolCard {
-                Text(
-                    "Plug a Wi-Fi Pineapple Mark VII into your phone via USB-C, enable Android USB Tethering, " +
-                        "and enter an API token to pull its monitor-mode Recon scans onto the radar. " +
-                        "This reveals hidden APs and client/station radios your phone cannot normally see.",
-                    fontSize = 13.sp,
-                )
-                if (!pineappleConnected) {
-                    OutlinedTextField(
-                        value = pineappleToken, onValueChange = { pineappleToken = it },
-                        label = { Text("API Token (from Pineapple Settings)") },
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        singleLine = true,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                    if (!pineappleRunning) {
-                        Button(onClick = { Pineapple.start(pineappleToken, 2) }) { Text("Start Recon") }
-                    } else {
-                        Button(onClick = { Pineapple.stop() }, colors = ButtonDefaults.buttonColors(containerColor = Palette.red)) { Text("Stop") }
-                    }
-                    if (pineappleConnected) {
-                        OutlinedButton(onClick = { Pineapple.clear() }) { Text("Disconnect & Clear") }
-                    }
-                }
-                if (pineappleStatus.isNotEmpty()) {
-                    Text(pineappleStatus, fontSize = 13.sp, color = Palette.green, modifier = Modifier.padding(top = 6.dp))
-                }
-            }
-        }
+        
         // ---------- Lens finder
         item {
             SectionTitle("Lens finder")
