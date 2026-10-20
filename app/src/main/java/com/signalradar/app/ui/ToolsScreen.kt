@@ -43,6 +43,7 @@ import com.signalradar.app.scan.ScanEngine
 import com.signalradar.app.scan.Source
 import com.signalradar.app.scan.Vendors
 import kotlinx.coroutines.launch
+import com.signalradar.app.net.Pineapple
 
 @Composable
 fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> Unit) {
@@ -66,7 +67,12 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
     val status by ScanEngine.status.collectAsState()
 
     val alprDevices = devices.filter { it.source == Source.ALPR }.sortedBy { it.geoDistanceM ?: 1e9 }
-
+val pineappleRunning by Pineapple.running.collectAsState()
+    val pineappleStatus by Pineapple.status.collectAsState()
+    val pineappleConnected by Pineapple.connected.collectAsState()
+    val pineappleAp by Pineapple.apCount.collectAsState()
+    val pineappleClient by Pineapple.clientCount.collectAsState()
+    var pineappleToken by rememberSaveable { mutableStateOf("")
     LazyColumn(Modifier.fillMaxSize()) {
         item {
             Text("Tools", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.green, modifier = Modifier.padding(16.dp, 8.dp))
@@ -134,7 +140,36 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
                 Text("Map data © OpenStreetMap contributors (ODbL) · deflock.me", fontSize = 11.sp, color = Palette.muted, modifier = Modifier.padding(top = 6.dp))
             }
         }
-
+SectionTitle("Hak5 Wi-Fi Pineapple (USB-C)")
+            ToolCard {
+                Text(
+                    "Plug a Wi-Fi Pineapple Mark VII into your phone via USB-C, enable Android USB Tethering, " +
+                        "and enter an API token to pull its monitor-mode Recon scans onto the radar. " +
+                        "This reveals hidden APs and client/station radios your phone cannot normally see.",
+                    fontSize = 13.sp,
+                )
+                if (!pineappleConnected) {
+                    OutlinedTextField(
+                        value = pineappleToken, onValueChange = { pineappleToken = it },
+                        label = { Text("API Token (from Pineapple Settings)") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        singleLine = true,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    if (!pineappleRunning) {
+                        Button(onClick = { Pineapple.start(pineappleToken, 2) }) { Text("Start Recon") }
+                    } else {
+                        Button(onClick = { Pineapple.stop() }, colors = ButtonDefaults.buttonColors(containerColor = Palette.red)) { Text("Stop") }
+                    }
+                    if (pineappleConnected) {
+                        OutlinedButton(onClick = { Pineapple.clear() }) { Text("Disconnect & Clear") }
+                    }
+                }
+                if (pineappleStatus.isNotEmpty()) {
+                    Text(pineappleStatus, fontSize = 13.sp, color = Palette.green, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
         // ---------- Lens finder
         item {
             SectionTitle("Lens finder")
