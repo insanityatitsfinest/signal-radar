@@ -227,6 +227,7 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
         item {
             SectionTitle("Signal meters")
             MagnetometerCard()
+            UltrasonicCard()
         }
 
         // ---------- Cellular
