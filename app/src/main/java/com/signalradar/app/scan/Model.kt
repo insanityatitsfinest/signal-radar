@@ -9,6 +9,7 @@ enum class Source(val label: String) {
     LAN("Network"),
     ALPR("ALPR map"),
     PINEAPPLE("Pineapple"),
+    CELL("Cell"),
 }
 
 enum class Confidence(val label: String) { LOW("Weak"), MEDIUM("Likely"), HIGH("Strong") }

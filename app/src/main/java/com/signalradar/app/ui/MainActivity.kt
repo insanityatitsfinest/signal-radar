@@ -62,11 +62,13 @@ import com.signalradar.app.scan.Confidence
 import com.signalradar.app.scan.Heading
 import com.signalradar.app.net.AlprTracker
 import com.signalradar.app.net.Prefs
+import com.signalradar.app.scan.CellScanner
 import com.signalradar.app.scan.ScanEngine
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
+    // Core permissions — the app's scanning needs these, so they gate the UI.
     private val perms: Array<String> = buildList {
         add(Manifest.permission.ACCESS_FINE_LOCATION)
         add(Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -74,6 +76,11 @@ class MainActivity : ComponentActivity() {
         add(Manifest.permission.BLUETOOTH_CONNECT)
         if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.NEARBY_WIFI_DEVICES)
     }.toTypedArray()
+
+    // Requested alongside, but optional: READ_PHONE_STATE only enriches cell-tower IDs. If denied,
+    // cell signal + type still work, so it must not block the app.
+    private val allPermsRequested: Array<String> =
+        (perms.toList() + Manifest.permission.READ_PHONE_STATE).toTypedArray()
 
     private var granted by mutableStateOf(false)
     private var started = false
@@ -90,6 +97,7 @@ class MainActivity : ComponentActivity() {
     private fun startScanning() {
         started = true
         ScanEngine.start()
+        CellScanner.start(this)
         // Pull the ALPR camera map on open (fine-location granted) unless the user turned it off.
         // Only when we don't already have it, so returning from another app keeps the loaded list.
         if (Prefs.autoLoadAlpr(this) &&
@@ -108,10 +116,10 @@ class MainActivity : ComponentActivity() {
         refresh()
         setContent {
             AppTheme {
-                if (granted) AppRoot() else PermissionScreen { launcher.launch(perms) }
+                if (granted) AppRoot() else PermissionScreen { launcher.launch(allPermsRequested) }
             }
         }
-        if (!granted) launcher.launch(perms)
+        if (!granted) launcher.launch(allPermsRequested)
     }
 
     override fun onStart() {
@@ -125,6 +133,7 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         Heading.stop()
         ScanEngine.stop()
+        CellScanner.stop()
         started = false
     }
 }

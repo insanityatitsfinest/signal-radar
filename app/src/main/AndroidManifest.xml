@@ -11,6 +11,11 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- Cell-tower scan (signal + type work from location alone; this enriches tower IDs) -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Ultrasonic / audio-beacon detector -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
 
     <!-- Hidden-camera scan of the local network -->

@@ -42,6 +42,7 @@ import com.signalradar.app.net.AlprTracker
 import com.signalradar.app.net.LanScanner
 import com.signalradar.app.net.Pineapple
 import com.signalradar.app.net.Prefs
+import com.signalradar.app.scan.CellScanner
 import com.signalradar.app.scan.Device
 import com.signalradar.app.scan.Rssi
 import com.signalradar.app.scan.ScanEngine
@@ -78,6 +79,7 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
 
     val classic by ScanEngine.classicEnabled.collectAsState()
     val status by ScanEngine.status.collectAsState()
+    val cellServing by CellScanner.serving.collectAsState()
 
     val alprDevices = devices.filter { it.source == Source.ALPR }.sortedBy { it.geoDistanceM ?: 1e9 }
     val pineDevices = devices.filter { it.source == Source.PINEAPPLE }
@@ -221,6 +223,30 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
             }
         }
 
+        // ---------- Signal meters
+        item {
+            SectionTitle("Signal meters")
+            MagnetometerCard()
+        }
+
+        // ---------- Cellular
+        item {
+            ToolCard {
+                Text("Cell towers", fontWeight = FontWeight.Bold, color = Palette.text)
+                val cells = devices.count { it.source == Source.CELL }
+                Text(
+                    if (cells == 0) "Looking for cell towers… (needs Location on)"
+                    else "$cells towers in range" + (cellServing?.let { ". Serving: $it" } ?: "") + ".",
+                    fontSize = 13.sp, color = Palette.cell, modifier = Modifier.padding(top = 2.dp),
+                )
+                Text(
+                    "Shows the cellular towers your phone can hear, with signal and type (2G/3G/LTE/5G). Turn on the " +
+                        "\"Cell towers\" layer on the Radar to place them. Distance is rough — towers are far and it's signal-based.",
+                    fontSize = 12.sp, color = Palette.muted, modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
+
         // ---------- Lens finder
         item {
             SectionTitle("Lens finder")
@@ -279,7 +305,7 @@ fun ToolsScreen(devices: List<Device>, onOpen: (String) -> Unit, onLens: () -> U
 }
 
 @Composable
-private fun ToolCard(content: @Composable () -> Unit) {
+internal fun ToolCard(content: @Composable () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = Palette.surface), modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
         Column(Modifier.padding(14.dp)) { content() }
     }

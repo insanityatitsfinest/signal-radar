@@ -95,6 +95,7 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
     var showWifi by rememberSaveable { mutableStateOf(true) }
     var showAlpr by rememberSaveable { mutableStateOf(true) }
     var showPineapple by rememberSaveable { mutableStateOf(true) }
+    var showCell by rememberSaveable { mutableStateOf(false) }
     var threatsOnly by rememberSaveable { mutableStateOf(false) }
     var selected by remember { mutableStateOf<String?>(null) }
     val range = RANGES[rangeIdx]
@@ -107,9 +108,10 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
             Source.WIFI -> showWifi
             Source.ALPR -> showAlpr
             Source.PINEAPPLE -> showPineapple
+            Source.CELL -> showCell
             Source.LAN -> false
         }
-        val fresh = d.source == Source.ALPR || d.source == Source.PINEAPPLE || now - d.lastSeen < 90_000
+        val fresh = d.source == Source.ALPR || d.source == Source.PINEAPPLE || d.source == Source.CELL || now - d.lastSeen < 90_000
         srcOk && fresh && (!threatsOnly || d.hasThreat(Confidence.MEDIUM))
     }.sortedByDescending { it.smoothRssi ?: -50f }.take(120)
 
@@ -268,6 +270,7 @@ fun RadarScreen(devices: List<Device>, onOpen: (String) -> Unit) {
             LegendChip("Wi-Fi", Palette.wifi, showWifi) { showWifi = !showWifi }
             LegendChip("ALPR map", Palette.alpr, showAlpr) { showAlpr = !showAlpr }
             LegendChip("Pineapple", Palette.pineapple, showPineapple) { showPineapple = !showPineapple }
+            LegendChip("Cell towers", Palette.cell, showCell) { showCell = !showCell }
             LegendChip("Threats only", Palette.red, threatsOnly) { threatsOnly = !threatsOnly }
         }
         Text(

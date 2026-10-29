@@ -52,6 +52,7 @@ object Palette {
     val lan = Color(0xFFC77DFF)
     val alpr = Color(0xFFFF8A3D)
     val pineapple = Color(0xFF00E5A8)
+    val cell = Color(0xFFFF6FD8)
     val red = Color(0xFFFF4D4D)
     val amber = Color(0xFFFFB020)
 }
@@ -80,6 +81,7 @@ fun sourceColor(s: Source) = when (s) {
     Source.LAN -> Palette.lan
     Source.ALPR -> Palette.alpr
     Source.PINEAPPLE -> Palette.pineapple
+    Source.CELL -> Palette.cell
 }
 
 fun confColor(c: Confidence) = when (c) {
